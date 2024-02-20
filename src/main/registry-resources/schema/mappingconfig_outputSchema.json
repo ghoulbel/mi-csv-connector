@@ -1,0 +1,27 @@
+{
+  "$schema" : "http://wso2.org/json-schema/wso2-data-mapper-v5.0.0/schema#",
+  "outputType" : "XML",
+  "id" : "http://wso2jsonschema.org",
+  "title" : "data",
+  "type" : "object",
+  "properties" : {
+    "item" : {
+      "id" : "http://wso2jsonschema.org/item",
+      "type" : "object",
+      "properties" : {
+        "Code" : {
+          "id" : "http://wso2jsonschema.org/item/Code",
+          "type" : "string"
+        },
+        "Wert" : {
+          "id" : "http://wso2jsonschema.org/item/Wert",
+          "type" : "float"
+        },
+        "Beschreibung" : {
+          "id" : "http://wso2jsonschema.org/item/Beschreibung",
+          "type" : "string"
+        }
+      }
+    }
+  }
+}

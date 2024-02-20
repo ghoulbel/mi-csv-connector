@@ -1,0 +1,187 @@
+pool:
+  name: bz-onsite
+  demands:
+  - agent.name -equals bz-wso-001
+
+variables:
+  - template: env.yml
+  - group: ALL
+
+trigger:
+- main
+- develop
+
+jobs:
+  - job: "mi_build_deploy"
+    timeoutInMinutes: 10
+    steps:
+      - script: |
+          if [ ! -f ./pom.xml ]; then
+            echo "pom.xml not found! check repo! Exit..."
+            exit 1
+          fi
+          echo "pom.xml OK!"
+
+          # read pom
+          imageVersion=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          imageName=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
+
+          if [ -z "$imageVersion" -o -z "$imageName" ]; then
+            echo "unable to read artifactId or version in pom.xml!"
+            echo "artifactId: $imageName"
+            echo "version: $imageVersion"
+            exit 1
+          fi 
+
+          # create image tag
+          imageTag="${NEXUS_HOST}/${imageName}:${imageVersion}"
+          
+          # save tag to use in push step
+          echo "##vso[task.setvariable variable=imageTag]$imageTag"
+
+        displayName: "check files"
+      - script: |
+          echo "building maven project in repository: $(Build.Repository.Name) in branch: $(Build.SourceBranch)"
+          mvn clean install
+          if [ "$?" != "0" ]; then
+            echo "Error during maven build!"
+            echo "Exit..."
+            exit 1
+          fi
+        displayName: "maven build"
+      - script: |
+          echo "downloding bz_commons..."
+          wget -P mi-home/carbonapps http://bz-wso-001:8081/repository/bz-generic/bz_commons/bz_commons_0.9.0.car
+          if [ "$?" != "0" ]; then
+            echo "Error during commons download!"
+            echo "Exit..."
+            exit 1
+          fi
+        displayName: "download bz commons"
+      - script: |
+          echo "downloading secure files"
+          mkdir -p files
+          secure_file_names=$(SECURE_FILE_NAMES)
+          for secure_file_name in $(echo $secure_file_names | tr ',' '\n'); do
+            if [ ! -f "$(Agent.TempDirectory)/$secure_file_name" ]; then
+              echo "secure file: $secure_file_name does not exist!"
+              echo "Exit..."
+              exit 1
+            fi
+            echo "adding secure file to build: $secure_file_name"
+            cp "$(Agent.TempDirectory)/$secure_file_name" files/
+          done
+
+        condition: ne(variables['SECURE_FILE_NAMES'], '')
+        displayName: "download secure files"
+      - script: |
+          echo "logging in into registry: $(NEXUS_HOST)"
+          podman login "$(NEXUS_HOST)" -u "$(NEXUS_USER)" -p "$(NEXUS_PASSWORD)"
+          if [ "$?" != "0" ]; then
+            echo "unable to login into registry: $(NEXUS_HOST)"
+            echo "Exit..."
+            exit 1
+          fi
+
+          echo "---------"
+
+          # build imgage
+          echo "bilding image: $(imageTag)..."
+          podman build -t "$(imageTag)" .
+          if [ "$?" != "0" ]; then
+            echo "unable to build image: $(imageTag)"
+            echo "Exit..."
+            exit 1
+          fi
+
+          echo "successfully created local image: $(imageTag)"
+        displayName: "build image"
+      - script : |
+          echo "pushing image: $(imageTag)"
+          podman push "$(imageTag)"
+          if [ "$?" != "0" ]; then
+            echo "unable to push image $(imageTag)"
+            echo "Exit..."
+            exit 1
+          fi
+        displayName: "push image"
+      - script: |
+          # get export project name as variable PROJECT_NAME
+          export PROJECT_NAME="$(Build.Repository.Name)"
+          # set image tag env var for envsubst
+          export MI_IMAGE="$(imageTag)"
+          # set server deploy as "MI_HOSTNAME" for the docker-compose so hostname can be overwritten
+          export MI_HOSTNAME="$(SERVER_DEPLOY)"
+          # need to set FILEHUB conf because this mus be variable for testing
+          envsubst < docker-compose.yaml > compose.yaml
+          echo "envsubst docker-compose.yaml result:"
+          # replace ".files" for local development with "files" for pipeline deployment
+          sed -i 's/.files/files/g' compose.yaml
+          # overwrite old file - this is not commited to the repo
+          cat compose.yaml | tee ./docker-compose.yaml
+          echo # new line
+        displayName: "update variables"
+
+      - script: |
+          #!/bin/bash
+          set -ue
+
+          export projectName="$(Build.Repository.Name)"
+
+          echo "starting deployment on server: $(SERVER_DEPLOY)"
+      
+          # stop old compose (if exists) or create project folder
+          ssh apox_svc@"$(SERVER_DEPLOY)" /bin/bash << EOF
+          if [ -d "/data/$projectName" ]; then
+            cd "/data/$projectName";
+            if [ -f ./docker-compose.yaml ]; then
+              podman-compose down
+            fi
+          else
+            mkdir -p "/data/$projectName"
+            echo "project folder created: /data/$projectName"
+            # need a files folder if project has secure files
+            mkdir "/data/$projectName/files"
+          fi
+          EOF
+          # copy files
+          scp ./docker-compose.yaml "apox_svc@$(SERVER_DEPLOY):/data/$projectName/"
+          # copy (secure) files from files folder if any exists
+          if [ -d ./files ]; then
+            scp -r ./files/* "apox_svc@$(SERVER_DEPLOY):/data/$projectName/files/"
+          fi
+          # log in to registry on deployment server
+          ssh apox_svc@"$(SERVER_DEPLOY)" /bin/bash << EOF
+          echo "logging in into registry: $(NEXUS_HOST)"
+          podman login "$(NEXUS_HOST)" -u "$(NEXUS_USER)" -p "$(NEXUS_PASSWORD)"
+          if [ "$?" != "0" ]; then
+            echo "unable to login into registry: $(NEXUS_HOST)"
+            echo "Exit..."
+            exit 1
+          fi
+          EOF
+
+          # pull new containers
+          ssh apox_svc@"$(SERVER_DEPLOY)" /bin/bash << EOF
+          cd "/data/$projectName"
+          podman-compose pull
+          EOF
+
+          # setup systemd user unit
+          ssh apox_svc@"$(SERVER_DEPLOY)" /bin/bash << EOF
+          export XDG_RUNTIME_DIR=/run/user/$UID
+          cd "/data/$projectName"
+          podman-compose systemd -a register
+          systemctl --user enable --now "podman-compose@$projectName"
+          EOF 
+        displayName: "deploy on server"
+
+  - job: cleanup
+    dependsOn: "mi_build_deploy"
+    condition: always()
+    steps:
+      - script: | 
+          echo "CLEAN-UP"
+          echo "removing files from $(Build.SourcesDirectory)"
+          rm -rf $(Build.SourcesDirectory)/{,.[!.],..?}*
+        displayName: "cleanup"

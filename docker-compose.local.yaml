@@ -1,0 +1,25 @@
+version: '3.8'
+services:
+  mi:
+    image: ghcr.io/integon/wso2mi:4.2.0
+    hostname: bz_artikelstammdaten_taxcodes
+    environment:
+      PROJECT_NAME: bz_artikelstammdaten_taxcodes
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9191/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./mi-home/carbonapps:/home/wso2carbon/wso2mi-4.2.0/repository/deployment/server/carbonapps
+      - ./mi-home/lib:/home/wso2carbon/wso2mi-4.2.0/lib
+      - ./mi-home/conf/deployment.toml:/home/wso2carbon/wso2mi-4.2.0/conf/deployment.toml:ro
+      - ./mi-home/conf/log4j2.properties:/home/wso2carbon/wso2mi-4.2.0/conf/log4j2.properties:ro
+      - ./IN:/IN
+      - ./OUT:/OUT
+    labels:
+      - "co.elastic.metricbeat.docker.forceContainerStatsStream=true"
+    x-podman:
+      uidmaps:
+        - "802:0:1"
+        - "0:1005:1"

@@ -1,0 +1,13 @@
+openapi: 3.0.1
+info:
+  title: data-mapper
+  description: API Definition of data-mapper
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/data-mapper
+paths:
+  /convert:
+    post:
+      responses:
+        default:
+          description: Default response

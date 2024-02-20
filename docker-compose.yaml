@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  mi:
+    image: "${MI_IMAGE}"
+    hostname: ${MI_HOSTNAME}
+    environment:
+      PROJECT_NAME: ${PROJECT_NAME}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9191/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - /data/bz_artikelstammdaten_taxcodes/IN:/IN
+      - /data/bz_artikelstammdaten_taxcodes/OUT:/OUT
+    labels:
+      - "co.elastic.metricbeat.docker.forceContainerStatsStream=true"
+    x-podman:
+      uidmaps:
+        - "802:0:1"
+        - "0:1005:1"

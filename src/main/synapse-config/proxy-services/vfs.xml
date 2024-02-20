@@ -1,0 +1,72 @@
+<proxy xmlns="http://ws.apache.org/ns/synapse" name="vfs-proxy" transports="vfs">
+    <parameter name="transport.vfs.FileURI">file:///IN</parameter>        
+    <parameter name="transport.vfs.ContentType">text/plain</parameter>
+    <parameter name="transport.vfs.FileNamePattern">.*\.csv</parameter>
+    <parameter name="transport.PollInterval">15</parameter>
+    <parameter name="transport.vfs.Streaming">true</parameter>
+    <parameter name="transport.vfs.MoveAfterProcess">file:///IN/archive</parameter>            
+    <parameter name="transport.vfs.MoveAfterFailure">file:///IN/fail</parameter>          
+    <parameter name="transport.vfs.ActionAfterProcess">MOVE</parameter>
+    <parameter name="transport.vfs.ActionAfterFailure">MOVE</parameter>
+    <target>
+         <inSequence>
+            <property name="filename" expression="get-property('transport','FILE_NAME')" />
+            <property name="filename" expression="fn:concat(fn:substring-before($ctx:filename, '.csv'), '.xml')" />
+            <property name="transport.vfs.ReplyFileName" expression="$ctx:filename" scope="transport"/>
+
+            <CSV.csvToXml>
+                <headerPresent>Present</headerPresent>
+                <skipHeader>true</skipHeader>
+                <valueSeparator>;</valueSeparator>
+                <tagNames>Code,Wert,Beschreibung</tagNames>
+                <rootElementTag>results</rootElementTag>
+                <groupElementTag>result</groupElementTag>
+            </CSV.csvToXml>
+            
+            <property name="InputCode" expression="$body/results/result/Code" />
+            <property name="InputValue" expression="$body/results/result/Wert" />
+            <property name="InputDescription" expression="$body/results/result/Beschreibung" />
+
+            <dbreport>
+                <connection>
+                    <pool>
+                        <dsName>jdbc/BZ_DBReport_DS</dsName>
+                    </pool>
+                </connection>
+                <statement>
+                    <sql><![CDATA[
+                        UPDATE taxcodes 
+                        SET value = ?, description = ?, changetimestamp = GETUTCDATE() 
+                        WHERE code = ?
+                    ]]></sql>
+                    <parameter expression="get-property('InputValue')" type="NUMERIC"/>
+                    <parameter expression="get-property('InputDescription')" type="VARCHAR"/>
+                    <parameter expression="get-property('InputCode')" type="CHAR"/>
+                </statement>
+            </dbreport>
+
+            <dbreport>
+                <connection>
+                    <pool>
+                        <driver>com.microsoft.sqlserver.jdbc.SQLServerDriver</driver>
+                        <url>jdbc:sqlserver://192.168.32.1:1444;databaseName=mi_dataservice</url>
+                        <user>readonly</user>
+                        <password>Flash8.2</password>
+                    </pool>
+                </connection>
+                <statement>
+                    <sql><![CDATA[
+                        INSERT INTO taxcodes (code, value, description, createtimestamp) 
+                        SELECT ?, ?, ?, GETUTCDATE() 
+                        WHERE NOT EXISTS (SELECT 1 FROM taxcodes WHERE code = ?)
+                    ]]></sql>
+                    <parameter expression="get-property('InputCode')" type="CHAR"/>
+                    <parameter expression="get-property('InputValue')" type="NUMERIC"/>
+                    <parameter expression="get-property('InputDescription')" type="VARCHAR"/>
+                    <parameter expression="get-property('InputCode')" type="CHAR"/>
+                </statement>
+            </dbreport>
+
+        </inSequence>
+    </target>
+</proxy>

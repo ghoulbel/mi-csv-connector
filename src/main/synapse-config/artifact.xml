@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<artifacts>
+
+    <artifact name="data-mapper_swagger" groupId="ch.integon.example" version="1.0.0"
+        type="synapse/metadata" serverRole="EnterpriseServiceBus">
+        <file>resources/metadata/data-mapper_swagger.yaml</file>
+    </artifact>
+    <artifact name="data-mapper_metadata" groupId="ch.integon.example" version="1.0.0"
+        type="synapse/metadata" serverRole="EnterpriseServiceBus">
+        <file>resources/metadata/data-mapper_metadata.yaml</file>
+    </artifact>
+
+    <artifact name="vfs-proxy" type="synapse/proxy-service" serverRole="EnterpriseServiceBus" groupId="ch.integon.example"  version="1.0.0">
+        <file>proxy-services/vfs.xml</file>
+      </artifact>
+
+
+    <artifact name="csv-connector" version="1.0.5" type="synapse/lib" serverRole="EnterpriseServiceBus">
+        <file>connector/CSV-connector-1.0.5.zip</file>
+    </artifact>
+</artifacts>

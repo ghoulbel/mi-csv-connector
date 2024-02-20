@@ -1,0 +1,82 @@
+<!-- e.g How to use the data mapper via an API -->
+<?xml version="1.0" encoding="UTF-8"?>
+<api context="/data-mapper" name="data-mapper" xmlns="http://ws.apache.org/ns/synapse">
+
+<resource methods="GET" uri-template="/health">
+        <inSequence>
+            <log level="custom" category="DEBUG">
+                <property name="/data-mapper/health" value="inSequence"/>
+            </log>
+            <payloadFactory media-type="json">
+                <format>
+                    {
+                        "status": "UP"
+                    }
+                </format>
+                <args></args>
+            </payloadFactory>
+            <respond />
+        </inSequence>
+        <outSequence>
+            <respond />
+        </outSequence>
+        <faultSequence>
+            <respond />
+        </faultSequence>
+    </resource>
+
+    <resource methods="GET" url-mapping="/dblookup">
+        <inSequence>
+            <dblookup>
+                <connection>
+                    <pool>
+                        <driver>${driver}</driver>
+                        <url>${url}</url>
+                        <user>${user}</user>
+                        <password>${password}</password>
+                    </pool>
+                </connection>
+                <statement>
+                    <sql><![CDATA[select code, value from dwh.md_taxcodes]]></sql>
+                    <result column="value" name="taxcodes_value"/>
+                    <result column="code" name="taxcodes_code"/>
+                </statement>
+            </dblookup>
+            <payloadFactory media-type="text">
+                <format>$1 = $2</format>
+                <args>
+                    <arg evaluator="xml" expression="get-property('taxcodes_code')"/>
+                    <arg evaluator="xml" expression="get-property('taxcodes_value')"/>
+                </args>
+            </payloadFactory>
+            <respond/>
+        </inSequence>
+        <outSequence/>
+        <faultSequence/>
+    </resource>
+
+    <resource methods="POST" uri-template="/convert">
+        <inSequence>
+            <log level="custom" category="INFO">
+                <property name="/data-mapper/convert" value="inSequence" />
+            </log>
+            <datamapper config="gov:datamapper/schema/mappingconfig.dmc" inputSchema="gov:datamapper/schema/mappingconfig_inputSchema.json" inputType="CSV" outputSchema="gov:datamapper/schema/mappingconfig_outputSchema.json" outputType="XML"/>
+            <log level="full"/>
+            <!-- e.g. send respond code 201, setup header and call endpoint 
+            <property name="HTTP_SC" value="201" scope="axis2" />
+            <header name="X-File-Name" value="foo.xml" scope="transport"/>
+            <call>
+                <endpoint>
+                    <http method="POST" uri-template="http://fh:5000/send?profile=data-out"/>
+                </endpoint>
+            </call>
+            -->
+            <respond/>
+        </inSequence>
+        <outSequence>
+            <respond/>
+        </outSequence>
+        <respond/>
+        <faultSequence/>
+    </resource>
+</api>
